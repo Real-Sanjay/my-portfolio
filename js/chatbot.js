@@ -1,0 +1,169 @@
+document.addEventListener('DOMContentLoaded', function() {
+    // Wait time for external scripts to load
+    setTimeout(() => {
+        initializeChatbot();
+    }, 1000);
+});
+
+function initializeChatbot() {
+    // Chatbot UI elements
+    const chatbotBtn = document.getElementById('chatbotBtn');
+    const chatbotModal = document.getElementById('chatbotModal');
+    const closeChatbot = document.querySelector('.close-chatbot');
+    const chatbotMessages = document.getElementById('chatbotMessages');
+    const chatbotInput = document.getElementById('chatbotInput');
+    const sendMessageBtn = document.getElementById('sendMessageBtn');
+
+    // Gemini API Configuration
+    const API_KEY = 'Your api key';
+    const API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+    
+    // Information about me
+    const ABOUT_ME = `
+  You are a friendly and professional AI assistant for Sanjay's personal portfolio.  
+  
+    Always give concise (1-2 sentence) answers that are accurate and engaging. 
+    Do not say "I don't know"; if you are unsure, rephrase confidently using available information. Never say "I don't know" or "not specified." If unsure, use the provided details to answer reasonably. 
+    
+    Here’s what you know about Sanjay:  
+    
+     **Personal Summary**  
+    Sanjay is a passionate Full Stack Developer from Mysore, Karnataka, currently working as an **Associate Software Engineer at Solugenix, Hyderabad (2024–Present)**.  
+    He specializes in modern web development using the **MEAN stack (MongoDB, Express, Angular, Node.js)** and has a strong focus on building scalable applications.  
+    
+     **Education**  
+    -  **Master’s in Computer Applications (MCA)** from JSS Science and Technology University, Mysore.  
+    -  **BSc in Physics, Mathematics, and Computer Science** from the University of Mysore.  
+    
+     **Technical Skills**  
+    - **Frontend**: Angular, React, TypeScript, TailwindCSS, PrimeNG  
+    - **Backend**: Node.js, Express.js, NestJS  
+    - **Mobile**: Flutter (Dart)  
+    - **Databases**: MongoDB, MySQL  
+    - **Cloud & Tools**: AWS, GitHub, Postman, Agile/Scrum  
+    
+     **Projects**  
+    1️ *Training Management System*: A full-stack web app for managing programs, trainers, and assessments.  
+    2️ *Customizable Online Store*: Admin panel for store owners to create and manage their shops.  
+    3️ *BasketXpert*: Market basket analysis tool using Python & Streamlit.  
+    
+     **Work Experience**  
+    - Solugenix: Associate Software Engineer (2024–present).  
+    - GlowTouch Technologies: Technical Support Engineer (2021–2022).  
+    
+     **Interests & Hobbies**  
+    -  Cricket and other sports  
+    -  Gaming  
+    -  Watching movies and TV shows  
+    -  Fitness and exercise  
+    
+     **Contact Info**  
+    -  Email: sanjaydh006@gmail.com  
+    -  GitHub: https://github.com/Real-Sanjay  
+    -  LinkedIn: https://www.linkedin.com/in/its-sanjay  
+    -  Instagram: https://www.instagram.com/its.sanjay005  
+    `;
+
+    // Toggle chatbot modal
+    chatbotBtn.addEventListener('click', function() {
+        chatbotModal.classList.toggle('active');
+    });
+
+    closeChatbot.addEventListener('click', function() {
+        chatbotModal.classList.remove('active');
+    });
+
+    // Send message function
+    function sendMessage() {
+        const message = chatbotInput.value.trim(); // Removes whitespace from the beginning and end of the input
+        if (message === '') return;
+
+        // Add user message to chat
+        addMessage(message, 'chatbot-query');
+        chatbotInput.value = '';
+
+        // Shows typing indicator
+        const typingIndicator = document.createElement('div');
+        typingIndicator.className = 'chatbot-message chatbot-response';
+        typingIndicator.textContent = '...';
+        typingIndicator.id = 'typingIndicator';
+        chatbotMessages.appendChild(typingIndicator);
+        chatbotMessages.scrollTop = chatbotMessages.scrollHeight;
+
+        // Call Gemini API
+        sendToGemini(message)
+            .then(response => {
+                // Remove typing indicator
+                const indicator = document.getElementById('typingIndicator');
+                if (indicator) indicator.remove();
+                
+                // Add response to chat
+                addMessage(response, 'chatbot-response');
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                const indicator = document.getElementById('typingIndicator');
+                if (indicator) indicator.remove();
+                addMessage("Sorry, I'm having trouble connecting to my knowledge base. Please try again later.", 'chatbot-response');
+            });
+    }
+
+    // Send message on button click or Enter key
+    sendMessageBtn.addEventListener('click', sendMessage);
+    chatbotInput.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            sendMessage();
+        }
+    });
+
+    // Add message to chat 
+    function addMessage(text, className) {
+        const messageElement = document.createElement('div');
+        messageElement.className = `chatbot-message ${className}`;
+        messageElement.textContent = text;
+        chatbotMessages.appendChild(messageElement);
+        chatbotMessages.scrollTop = chatbotMessages.scrollHeight;
+    }
+
+    // Send message to Gemini API
+    async function sendToGemini(message, retries = 3, delay = 1000) {
+        try {
+            const prompt = `${ABOUT_ME}\n\nUser: ${message}\nAssistant:`; // The prompt is the message that the user sends to the assistant
+            
+            const response = await fetch(`${API_URL}?key=${API_KEY}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-goog-api-key': API_KEY
+                },
+                body: JSON.stringify({
+                    contents: [{
+                        parts: [{
+                            text: prompt
+                        }]
+                    }]
+                })
+            });
+
+            const data = await response.json();
+            
+            if (data.candidates && data.candidates[0].content.parts[0].text) {
+                return data.candidates[0].content.parts[0].text;
+            } else if (data.error) {
+                if (data.error.code === 429 && retries > 0) {
+                    // If rate limited, wait and retry
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    return sendToGemini(message, retries - 1, delay * 2);
+                }
+                console.error('API Error:', data.error);
+                return "Sorry, the assistant is currently overloaded. Please try again later.";
+            } else {
+                console.error('Unexpected API response:', data);
+                return "Sorry, I couldn't process that request.";
+            }
+        } catch (error) {
+            console.error('Error calling Gemini API:', error);
+            return "Sorry, I'm having trouble connecting to the service.";
+        }
+    }
+}
